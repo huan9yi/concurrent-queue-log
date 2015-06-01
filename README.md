@@ -1,4 +1,4 @@
-# Concurrent-Queue-Log
+# concurrent-queue-log
 
 基于multiprocessing.Queue，支持在多线程/多进程并发的环境下对同一个文件进行操作的日志模块
 
