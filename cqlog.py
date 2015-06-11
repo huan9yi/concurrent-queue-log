@@ -1,10 +1,11 @@
 # -*- coding: utf-8 -*-
+
 """基于共享队列，支持在多线程/进程并发的环境下对同一个文件进行操作的日志模块"""
 
-__version__  = '0.2'
+__version__  = '0.3'
 __author__ = 'yi'
 __all__ = [
-    'initialize_log',
+    'init_log',
     'default_log_config',
 ]
 
@@ -14,21 +15,65 @@ import multiprocessing
 import logging
 import logging.config
 
-def initialize_log(dict_config=None):
+def init_log(concurrent=True, dict_config=None):
     """初始化log"""
     
     # 没有提供log配置就使用默认的
     if not dict_config:
         dict_config = default_log_config()
     
-    log_queue = multiprocessing.Queue(-1)
-    listener = multiprocessing.Process(target=queue_listener, args=(log_queue, dict_config))
-    listener.start()
+    if concurrent:
+        log_queue = multiprocessing.Queue(-1)
+        listener = multiprocessing.Process(target=queue_listener, args=(log_queue, dict_config))
+        listener.start()
     
-    # root
-    log = CQLog(log_queue)
+        return CQLog(log_queue)
+    else:
+        configure_log(dict_config)
+        
+        return logging.getLogger()
+
+def default_log_config(fileName=None, maxBytes=10 * 1024 * 1024, backupCount=10, consoleLevel='DEBUG', fileLevel='INFO'):
+    """log默认配置"""
     
-    return log
+    if not fileName:
+        basename = os.path.basename(sys.argv[0])
+        if basename:
+            fileName = basename.split('.')[0] + '.log'
+        else:
+            fileName = 'cqlog.log'
+    
+    dict_config = {
+        'version': 1,
+        'formatters': {
+            'detailed': {
+                'class': 'logging.Formatter',
+                'format': '%(levelname)s %(asctime)s  %(message)s\n',
+                'datefmt': '%Y-%m-%d %H:%M:%S',
+            },
+        },
+        'handlers': {
+            'console': {
+                'class': 'logging.StreamHandler',
+                'formatter': 'detailed',
+                'level': consoleLevel,
+            },
+            'file': {
+                'class': 'logging.handlers.RotatingFileHandler',
+                'formatter': 'detailed',
+                'level': fileLevel,
+                'filename': fileName,
+                'maxBytes': maxBytes,
+                'backupCount': backupCount,
+            },
+        },
+        'root': {
+            'level': 'DEBUG',
+            'handlers': ['console', 'file'],
+        },
+    }
+    
+    return dict_config
     
 def queue_listener(log_queue, dict_config):
     """log queue监听进程"""
@@ -77,45 +122,6 @@ class CQLog:
             else:
                 raise AttributeError(attr)
 
-def default_log_config(fileName='cqlog.log', maxBytes=10 * 1024 * 1024 / 1024, backupCount=10, consoleLevel='DEBUG', fileLevel='INFO'):
-    """log默认配置"""
-    
-    basename = os.path.basename(sys.argv[0])
-    if basename:
-        fileName = basename.split('.')[0] + '.log'
-    
-    dict_config = {
-        'version': 1,
-        'formatters': {
-            'detailed': {
-                'class': 'logging.Formatter',
-                'format': '%(levelname)s %(asctime)s  %(message)s\n',
-                'datefmt': '%Y-%m-%d %H:%M:%S',
-            },
-        },
-        'handlers': {
-            'console': {
-                'class': 'logging.StreamHandler',
-                'formatter': 'detailed',
-                'level': consoleLevel,
-            },
-            'file': {
-                'class': 'logging.handlers.RotatingFileHandler',
-                'formatter': 'detailed',
-                'level': fileLevel,
-                'filename': fileName,
-                'maxBytes': maxBytes,
-                'backupCount': backupCount,
-            },
-        },
-        'root': {
-            'level': 'DEBUG',
-            'handlers': ['console', 'file'],
-        },
-    }
-    
-    return dict_config
-
 def testfunc(log):
     import time
     import threading
@@ -129,10 +135,14 @@ def testfunc(log):
         time.sleep(0.1)
     
 if __name__ == '__main__':
-    # Example
-    log = initialize_log()
+    # Example, concurrent
+    log = init_log()
     
     for i in range(10):
         #import threading
         #threading.Thread(target=testfunc, args=(log,)).start()
         multiprocessing.Process(target=testfunc, args=(log,)).start()
+    
+    # Example, not concurrent
+    #log = init_log(False)
+    #testfunc(log)
