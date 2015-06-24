@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 
-"""基于共享队列，支持在多线程/进程并发的环境下对同一个文件进行操作的日志模块"""
+"""
+日志模块，支持在多线程/进程并发的环境下对同一个文件进行操作（基于共享队列）
+"""
 
 __version__  = '0.3'
 __author__ = 'yi'
@@ -75,6 +77,15 @@ def default_log_config(fileName=None, maxBytes=10 * 1024 * 1024, backupCount=10,
     
     return dict_config
     
+def configure_log(dict_config):
+    #创建log目录
+    if 'handlers' in dict_config and 'file' in dict_config['handlers'] and 'filename' in dict_config['handlers']['file']:
+        dir = os.path.dirname(dict_config['handlers']['file']['filename'])
+        if dir and not os.path.exists(dir):
+            os.makedirs(dir)
+        
+    logging.config.dictConfig(dict_config)
+    
 def queue_listener(log_queue, dict_config):
     """log queue监听进程"""
     
@@ -85,14 +96,6 @@ def queue_listener(log_queue, dict_config):
             break
         logger = logging.getLogger(record.name)
         logger.handle(record)
-        
-def configure_log(dict_config):
-    #创建log目录
-    dir = os.path.dirname(dict_config['handlers']['file']['filename'])
-    if dir and not os.path.exists(dir):
-        os.makedirs(dir)
-        
-    logging.config.dictConfig(dict_config)
 
 class CQLog:
     """模拟logger对象的方法"""
@@ -100,7 +103,7 @@ class CQLog:
     def __init__(self, log_queue, name=None):
         self.name = name
         self.log_queue = log_queue
-        self.__virtual_methods = ('debug', 'info', 'warning', 'error', 'critical') # 虚拟的方法，统一处理
+        self.__virtual_methods = {'debug':logging.DEBUG, 'info':logging.INFO, 'warning':logging.WARNING, 'error':logging.ERROR, 'critical':logging.CRITICAL} # 虚拟的方法，以及对应的level
         
     def new_log(self, name=None):
         return CQLog(self.log_queue, name)
@@ -113,10 +116,8 @@ class CQLog:
             raise AttributeError(attr)
         else:
             if attr in self.__virtual_methods:
-                name = self.name
-                level = {'debug':logging.DEBUG, 'info':logging.INFO, 'warning':logging.WARNING, 'error':logging.ERROR, 'critical':logging.CRITICAL}[attr]
                 def caller(msg):
-                    record = logging.LogRecord(name, level, None, None, msg, None, None, None)
+                    record = logging.LogRecord(self.name, self.__virtual_methods[attr], None, None, msg, None, None, None)
                     self.log_queue.put_nowait(record)
                 return caller
             else:
@@ -132,7 +133,7 @@ def testfunc(log):
         log.warning(multiprocessing.current_process().name + ', ' + threading.current_thread().name + ', Warning')
         log.error(multiprocessing.current_process().name + ', ' + threading.current_thread().name + ', Error')
         log.critical(multiprocessing.current_process().name + ', ' + threading.current_thread().name + ', Critical')
-        time.sleep(0.1)
+        time.sleep(1)
     
 if __name__ == '__main__':
     # Example, concurrent
